@@ -1,0 +1,5 @@
+.DS_Store
+
+# I brani restano locali (diritti d'autore e peso del repo)
+audio/*
+!audio/.gitkeep

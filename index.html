@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Rumore Sud · #1</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
+    body { font: 12px/1.5 ui-monospace, Menlo, monospace; color: #f3e9ff; }
+    canvas { display: block; }
+    body.drag::after {
+      content: 'rilascia qui il brano'; position: fixed; inset: 16px;
+      border: 1px dashed #f3e9ff88; border-radius: 16px;
+      display: grid; place-items: center; font-size: 16px; pointer-events: none;
+    }
+
+    #intro {
+      position: fixed; inset: 0; display: grid; place-items: center; text-align: center;
+      background: radial-gradient(circle at 50% 40%, #2a1050 0%, #07030f 70%);
+      transition: opacity .8s;
+    }
+    #intro h1 { font-weight: 400; letter-spacing: .3em; font-size: 14px; margin: 0 0 24px; opacity: .8; }
+    #start {
+      font: inherit; font-size: 14px; color: #07030f; cursor: pointer;
+      padding: 14px 28px; border: 0; border-radius: 999px;
+      background: linear-gradient(90deg, #ffa4c8, #d190ff, #a3d5ef);
+    }
+    #intro p { opacity: .55; margin-top: 18px; }
+    .hidden { opacity: 0; pointer-events: none; }
+
+    #hud {
+      position: fixed; left: 16px; bottom: 16px; padding: 12px 14px; max-width: calc(100vw - 60px);
+      background: #07030f99; backdrop-filter: blur(8px); border-radius: 12px;
+      transition: opacity .3s;
+    }
+    .meter { display: flex; align-items: center; gap: 8px; margin: 3px 0; }
+    .meter span { width: 32px; opacity: .6; }
+    .meter div { width: 120px; height: 4px; background: #ffffff1a; border-radius: 2px; overflow: hidden; }
+    .meter i { display: block; height: 100%; transform-origin: left; transform: scaleX(0); }
+    #m-bass { background: #ff6fb5; } #m-mid { background: #c58bff; } #m-high { background: #8fe3ff; }
+    #beat { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #fff; opacity: 0; margin-left: 6px; }
+    #react, #light, #surge-freq { width: 120px; margin: 0; accent-color: #d190ff; }
+    #surge { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ffe9a8;
+             box-shadow: 0 0 10px #ffe9a8; opacity: 0; margin-left: 6px; }
+    #surge-now { font: inherit; color: inherit; cursor: pointer; padding: 0 8px; margin-left: 2px;
+                 background: #ffffff14; border: 1px solid #ffffff22; border-radius: 999px; }
+    #info { margin-top: 6px; opacity: .75; }
+    #keys { margin-top: 6px; opacity: .45; }
+
+    #sources { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    #sources button, #sources select, #hud-toggle {
+      font: inherit; color: inherit; cursor: pointer;
+      background: #ffffff14; border: 1px solid #ffffff22; border-radius: 999px; padding: 4px 10px;
+    }
+    #sources button:hover, #sources select:hover, #hud-toggle:hover { background: #ffffff26; }
+    #sources select { max-width: 180px; }
+    #sources select option { color: #000; }
+
+    /* Il toggle sta sopra il pannello; a pannello nascosto resta solo lui, quasi invisibile */
+    #hud { bottom: 52px; }
+    #hud-toggle {
+      position: fixed; left: 16px; bottom: 16px; width: 28px; height: 28px; padding: 0;
+      background: #07030f99; backdrop-filter: blur(8px); transition: opacity .3s;
+    }
+    body.hud-off #hud { opacity: 0; pointer-events: none; }
+    body.hud-off #hud-toggle { opacity: .15; }
+    body.hud-off #hud-toggle:hover { opacity: 1; }
+    /* Cursore nascosto quando il mouse è fermo (utile in proiezione) */
+    body.idle, body.idle * { cursor: none !important; }
+    body.idle.hud-off #hud-toggle { opacity: 0; }
+  </style>
+</head>
+<body class="hud-off">
+  <div id="intro">
+    <div>
+      <h1>RUMORE SUD · #1</h1>
+      <button id="start">entra nel sogno</button>
+      <p>parte il brano in audio/ · se manca, il microfono</p>
+    </div>
+  </div>
+
+  <button id="hud-toggle" title="Mostra/nascondi controlli (H)">◐</button>
+
+  <div id="hud">
+    <div class="meter"><span>bass</span><div><i id="m-bass"></i></div><b id="beat"></b></div>
+    <div class="meter"><span>mid</span><div><i id="m-mid"></i></div></div>
+    <div class="meter"><span>high</span><div><i id="m-high"></i></div></div>
+    <label class="meter" title="Reattività al suono (+ / −)">
+      <span>react</span><input id="react" type="range" min="0" max="2.5" step="0.1" value="1.4" />
+    </label>
+    <label class="meter" title="Intensità delle ondate di luce">
+      <span>luce</span><input id="light" type="range" min="0" max="2" step="0.1" value="1" />
+      <b id="surge"></b>
+    </label>
+    <label class="meter" title="Frequenza delle ondate: a sinistra rarissime, a destra frequenti ([ / ])">
+      <span>onde</span><input id="surge-freq" type="range" min="0" max="1" step="0.1" value="0.5" />
+      <button id="surge-now" title="Ondata adesso (E)">✦</button>
+    </label>
+
+    <div id="sources">
+      <button id="src-track" title="Brano in audio/ (T)">♪ brano</button>
+      <button id="src-play" title="Play / pausa (spazio)">⏯</button>
+      <button id="src-file" title="Scegli un file audio dal computer">carica…</button>
+      <select id="src-live" title="Ingresso live: microfono o scheda audio (M)">
+        <option value="">ingresso live…</option>
+      </select>
+      <input id="file-input" type="file" accept="audio/*" hidden />
+    </div>
+
+    <div id="info"></div>
+    <div id="keys">1–4 palette · +/− reattività · E ondata · [ ] frequenza onde · ↑↓ scie · ←→ liquido · S polvere · T brano · M live · spazio play · F fullscreen · H nascondi</div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/p5@1.11.3/lib/p5.min.js"></script>
+  <script src="shaders.js"></script>
+  <script src="audio.js"></script>
+  <script src="sketch.js"></script>
+</body>
+</html>
