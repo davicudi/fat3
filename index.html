@@ -2,118 +2,258 @@
 <html lang="it">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#07030f" />
   <title>Rumore Sud · #1</title>
   <style>
-    html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
-    body { font: 12px/1.5 ui-monospace, Menlo, monospace; color: #f3e9ff; }
+    :root {
+      --bg: #07030f;
+      --panel: #120a22f2;
+      --text: #f6efff;
+      --muted: #cbbbe3;        /* contrasto ≥ 9:1 sul fondo del pannello */
+      --line: #ffffff2e;
+      --fill: #ffffff14;
+      --fill-hover: #ffffff26;
+      --accent: #d190ff;
+      --focus: #ffd27a;
+      --grad: linear-gradient(90deg, #ffa4c8, #d190ff, #a3d5ef);
+      --tap: 48px;             /* altezza minima dei controlli */
+      color-scheme: dark;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); }
+    body { font: 16px/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; color: var(--text); }
     canvas { display: block; }
+    button, input, select, summary { font: inherit; color: inherit; }
+    :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+    kbd {
+      font: 600 13px/1 ui-monospace, Menlo, monospace; color: var(--muted);
+      padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; white-space: nowrap;
+    }
+    /* Su touch le scorciatoie da tastiera non servono */
+    @media (hover: none) and (pointer: coarse) { .field kbd, .btn kbd, #panel h3 kbd, .shortcuts { display: none; } }
+
     body.drag::after {
-      content: 'rilascia qui il brano'; position: fixed; inset: 16px;
-      border: 1px dashed #f3e9ff88; border-radius: 16px;
-      display: grid; place-items: center; font-size: 16px; pointer-events: none;
+      content: 'Rilascia qui il brano'; position: fixed; inset: 16px; z-index: 10;
+      border: 2px dashed var(--muted); border-radius: 16px; background: #07030fb3;
+      display: grid; place-items: center; font-size: 22px; pointer-events: none;
     }
 
+    /* ── Onboarding ───────────────────────────────────────── */
     #intro {
-      position: fixed; inset: 0; display: grid; place-items: center; text-align: center;
-      background: radial-gradient(circle at 50% 40%, #2a1050 0%, #07030f 70%);
+      position: fixed; inset: 0; z-index: 5; display: grid; place-items: center; text-align: center; padding: 24px;
+      background: radial-gradient(circle at 50% 40%, #2a1050 0%, var(--bg) 70%);
       transition: opacity .8s;
     }
-    #intro h1 { font-weight: 400; letter-spacing: .3em; font-size: 14px; margin: 0 0 24px; opacity: .8; }
+    #intro h1 { font-weight: 500; letter-spacing: .25em; font-size: clamp(18px, 4vw, 24px); margin: 0 0 32px; }
     #start {
-      font: inherit; font-size: 14px; color: #07030f; cursor: pointer;
-      padding: 14px 28px; border: 0; border-radius: 999px;
-      background: linear-gradient(90deg, #ffa4c8, #d190ff, #a3d5ef);
+      font-size: clamp(20px, 5vw, 26px); font-weight: 600; color: var(--bg); cursor: pointer;
+      min-height: 72px; padding: 18px 48px; border: 0; border-radius: 999px; background: var(--grad);
+      box-shadow: 0 0 40px #d190ff55; transition: transform .15s, box-shadow .15s;
     }
-    #intro p { opacity: .55; margin-top: 18px; }
+    #start:hover { transform: scale(1.04); box-shadow: 0 0 60px #d190ff88; }
+    #start:focus-visible { outline-offset: 6px; }
+    #intro p { color: var(--muted); font-size: 17px; margin: 24px auto 0; max-width: 32em; }
+    #intro-warn { color: var(--focus) !important; }
     .hidden { opacity: 0; pointer-events: none; }
 
-    #hud {
-      position: fixed; left: 16px; bottom: 16px; padding: 12px 14px; max-width: calc(100vw - 60px);
-      background: #07030f99; backdrop-filter: blur(8px); border-radius: 12px;
-      transition: opacity .3s;
+    /* ── Bottone del pannello ─────────────────────────────── */
+    #panel-toggle {
+      position: fixed; z-index: 3;
+      left: calc(16px + env(safe-area-inset-left)); bottom: calc(16px + env(safe-area-inset-bottom));
+      display: none; align-items: center; gap: 10px; min-height: 52px; padding: 0 20px;
+      font-size: 17px; font-weight: 600; cursor: pointer;
+      background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+      backdrop-filter: blur(10px); transition: opacity .4s;
     }
-    .meter { display: flex; align-items: center; gap: 8px; margin: 3px 0; }
-    .meter span { width: 32px; opacity: .6; }
-    .meter div { width: 120px; height: 4px; background: #ffffff1a; border-radius: 2px; overflow: hidden; }
+    #panel-toggle .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--grad); }
+    #panel-toggle:hover { background: #1d1233f2; }
+    body.started #panel-toggle { display: inline-flex; }
+    body.panel-open #panel-toggle { display: none; }
+    /* In proiezione: a mouse fermo cursore e bottone svaniscono, tornano al primo movimento o tocco */
+    body.idle, body.idle * { cursor: none !important; }
+    body.idle #panel-toggle:not(:focus-visible) { opacity: 0; }
+
+    /* ── Pannello ─────────────────────────────────────────── */
+    #panel {
+      position: fixed; z-index: 4; top: 16px; right: 16px; bottom: 16px;
+      width: min(400px, calc(100vw - 32px)); display: flex; flex-direction: column;
+      background: var(--panel); border: 1px solid var(--line); border-radius: 20px;
+      backdrop-filter: blur(14px); box-shadow: 0 20px 60px #0008;
+    }
+    #panel[hidden] { display: none; }
+    #panel header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 12px 12px 20px; border-bottom: 1px solid var(--line);
+    }
+    #panel h2 { margin: 0; font-size: 20px; font-weight: 600; }
+    #panel-close {
+      width: var(--tap); height: var(--tap); font-size: 28px; line-height: 1; cursor: pointer;
+      background: var(--fill); border: 1px solid var(--line); border-radius: 50%;
+    }
+    #panel-body {
+      overflow-y: auto; overscroll-behavior: contain; padding: 4px 20px 24px;
+      padding-bottom: calc(24px + env(safe-area-inset-bottom));
+    }
+    @media (max-width: 640px) {
+      #panel {
+        top: auto; left: 0; right: 0; bottom: 0; width: 100%; max-height: 82dvh;
+        border-radius: 20px 20px 0 0; border-bottom: 0;
+      }
+    }
+
+    #panel section { margin: 0; padding: 18px 0 6px; border-top: 1px solid var(--line); }
+    #panel section:first-child, [role=tabpanel] > section:first-child { border-top: 0; }
+    .palette { margin: 0; padding: 0; border: 0; min-width: 0; }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+    /* Schede Esperienza / Sviluppo (solo con ?dev) */
+    .tabs {
+      position: sticky; top: 0; z-index: 1; display: flex; gap: 6px; margin: 0 -20px; padding: 12px 20px;
+      background: #120a22; border-bottom: 1px solid var(--line);
+    }
+    .tabs [role=tab] {
+      flex: 1; min-height: var(--tap); cursor: pointer; font-weight: 600;
+      background: var(--fill); border: 2px solid transparent; border-radius: 12px; color: var(--muted);
+    }
+    .tabs [role=tab][aria-selected=true] { color: var(--text); background: var(--fill-hover); border-color: var(--accent); }
+    [role=tabpanel][hidden] { display: none; }
+    #panel h3 {
+      margin: 0 0 10px; padding: 0; font-size: 15px; font-weight: 700;
+      letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
+      display: flex; align-items: center; gap: 10px;
+    }
+    .chips { clear: both; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+
+    .row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    .btn, #panel select {
+      min-height: var(--tap); padding: 10px 16px; cursor: pointer;
+      background: var(--fill); border: 1px solid var(--line); border-radius: 12px;
+    }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; font-weight: 500; }
+    section > .btn { width: 100%; margin: 4px 0 10px; }
+    .row .btn { flex: 1 1 auto; }
+    .btn:hover, #panel select:hover, #panel-close:hover { background: var(--fill-hover); }
+    .btn:disabled { opacity: .45; cursor: default; }
+    #panel select { width: 100%; }
+    #panel select option { color: #000; }
+
+    .field { display: block; margin: 0 0 12px; }
+    .field-head { display: flex; align-items: center; gap: 10px; margin-bottom: 2px; }
+    .field-head label { flex: 1; }
+    .field-head output { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 3.5em; text-align: right; }
+
+    /* Slider con area di tocco alta e cursore grande */
+    input[type=range] {
+      -webkit-appearance: none; appearance: none; width: 100%; height: var(--tap);
+      background: transparent; margin: 0; cursor: pointer; touch-action: pan-y;
+    }
+    input[type=range]::-webkit-slider-runnable-track {
+      height: 8px; border-radius: 4px;
+      background: linear-gradient(90deg, var(--accent) var(--p, 0%), #ffffff33 var(--p, 0%));
+    }
+    input[type=range]::-moz-range-track { height: 8px; border-radius: 4px; background: #ffffff33; }
+    input[type=range]::-moz-range-progress { height: 8px; border-radius: 4px; background: var(--accent); }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 28px; height: 28px; margin-top: -10px; border-radius: 50%;
+      background: var(--text); border: 4px solid var(--accent);
+    }
+    input[type=range]::-moz-range-thumb {
+      width: 20px; height: 20px; border-radius: 50%; background: var(--text); border: 4px solid var(--accent);
+    }
+    input[type=range]:focus-visible { outline-offset: 0; border-radius: 8px; }
+
+    /* Interruttori (checkbox con role="switch") */
+    .toggle { display: flex; align-items: center; gap: 10px; min-height: var(--tap); cursor: pointer; }
+    .toggle > span { flex: 1; }
+    .switch {
+      -webkit-appearance: none; appearance: none; flex: none; margin: 0; cursor: pointer;
+      width: 56px; height: 32px; border-radius: 16px; background: #ffffff33; position: relative; transition: background .2s;
+    }
+    .switch::after {
+      content: ''; position: absolute; top: 4px; left: 4px; width: 24px; height: 24px;
+      border-radius: 50%; background: var(--text); transition: transform .2s;
+    }
+    .switch:checked { background: var(--accent); }
+    .switch:checked::after { transform: translateX(24px); }
+
+    /* Palette: radio a forma di chip con anteprima dei colori */
+    .chip {
+      display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 8px 12px; cursor: pointer;
+      background: var(--fill); border: 2px solid transparent; border-radius: 12px;
+    }
+    .chip::before { content: ''; flex: none; width: 28px; height: 28px; border-radius: 50%; background: var(--sw); }
+    .chip input { position: absolute; opacity: 0; pointer-events: none; }
+    .chip:has(input:checked) { border-color: var(--accent); background: var(--fill-hover); font-weight: 600; }
+    .chip:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+    .meters { margin: 4px 0 8px; }
+    .meter { display: flex; align-items: center; gap: 10px; margin: 6px 0; font-size: 14px; color: var(--muted); }
+    .meter span { width: 48px; }
+    .meter div { flex: 1; height: 8px; background: #ffffff1a; border-radius: 4px; overflow: hidden; }
     .meter i { display: block; height: 100%; transform-origin: left; transform: scaleX(0); }
     #m-bass { background: #ff6fb5; } #m-mid { background: #c58bff; } #m-high { background: #8fe3ff; }
-    #beat { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #fff; opacity: 0; margin-left: 6px; }
-    #react, #light, #surge-freq { width: 120px; margin: 0; accent-color: #d190ff; }
-    #surge { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ffe9a8;
-             box-shadow: 0 0 10px #ffe9a8; opacity: 0; margin-left: 6px; }
-    #surge-now { font: inherit; color: inherit; cursor: pointer; padding: 0 8px; margin-left: 2px;
-                 background: #ffffff14; border: 1px solid #ffffff22; border-radius: 999px; }
-    #info { margin-top: 6px; opacity: .75; }
-    #keys { margin-top: 6px; opacity: .45; }
+    .dots { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); margin-top: 8px; }
+    .dots b { width: 12px; height: 12px; border-radius: 50%; opacity: 0; }
+    .dots b + b { margin-left: 12px; }
+    #beat { background: #fff; }
+    #surge { background: #ffe9a8; box-shadow: 0 0 10px #ffe9a8; }
+    .status { margin: 8px 0 4px; color: var(--muted); font-size: 15px; overflow-wrap: anywhere; }
 
-    #sources { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-    #sources button, #sources select, #hud-toggle {
-      font: inherit; color: inherit; cursor: pointer;
-      background: #ffffff14; border: 1px solid #ffffff22; border-radius: 999px; padding: 4px 10px;
-    }
-    #sources button:hover, #sources select:hover, #hud-toggle:hover { background: #ffffff26; }
-    #sources select { max-width: 180px; }
-    #sources select option { color: #000; }
+    .shortcuts { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px; }
+    .shortcuts summary { min-height: var(--tap); display: flex; align-items: center; cursor: pointer; font-weight: 600; }
+    .shortcuts dl { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; align-items: center; margin: 8px 0 0; }
+    .shortcuts dd { margin: 0; color: var(--muted); }
 
-    /* Il toggle sta sopra il pannello; a pannello nascosto resta solo lui, quasi invisibile */
-    #hud { bottom: 52px; }
-    #hud-toggle {
-      position: fixed; left: 16px; bottom: 16px; width: 28px; height: 28px; padding: 0;
-      background: #07030f99; backdrop-filter: blur(8px); transition: opacity .3s;
+    /* Ripresa dopo un ricaricamento del browser */
+    #resume {
+      position: fixed; z-index: 6; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom));
+      transform: translateX(-50%); width: min(440px, calc(100vw - 32px)); padding: 16px 20px; text-align: center;
+      background: var(--panel); border: 1px solid var(--line); border-radius: 20px; backdrop-filter: blur(14px);
     }
-    body.hud-off #hud { opacity: 0; pointer-events: none; }
-    body.hud-off #hud-toggle { opacity: .15; }
-    body.hud-off #hud-toggle:hover { opacity: 1; }
-    /* Cursore nascosto quando il mouse è fermo (utile in proiezione) */
-    body.idle, body.idle * { cursor: none !important; }
-    body.idle.hud-off #hud-toggle { opacity: 0; }
+    #resume[hidden] { display: none; }
+    #resume p { margin: 0 0 12px; font-size: 17px; }
+    #resume-audio {
+      font-size: 20px; font-weight: 600; color: var(--bg); cursor: pointer;
+      min-height: 60px; padding: 14px 36px; border: 0; border-radius: 999px; background: var(--grad);
+    }
+
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
   </style>
 </head>
-<body class="hud-off">
+<body>
   <div id="intro">
     <div>
       <h1>RUMORE SUD · #1</h1>
-      <button id="start">entra nel sogno</button>
-      <p>parte il brano in audio/ · se manca, il microfono</p>
+      <button id="start" type="button">Entra nel sogno</button>
+      <p>Servono webcam e audio: parte il brano, se manca il microfono.</p>
+      <p id="intro-warn" role="alert" hidden>
+        Webcam e microfono funzionano solo in HTTPS o su localhost: da questo indirizzo il browser li blocca.
+      </p>
     </div>
   </div>
 
-  <button id="hud-toggle" title="Mostra/nascondi controlli (H)">◐</button>
-
-  <div id="hud">
-    <div class="meter"><span>bass</span><div><i id="m-bass"></i></div><b id="beat"></b></div>
-    <div class="meter"><span>mid</span><div><i id="m-mid"></i></div></div>
-    <div class="meter"><span>high</span><div><i id="m-high"></i></div></div>
-    <label class="meter" title="Reattività al suono (+ / −)">
-      <span>react</span><input id="react" type="range" min="0" max="2.5" step="0.1" value="1.4" />
-    </label>
-    <label class="meter" title="Intensità delle ondate di luce">
-      <span>luce</span><input id="light" type="range" min="0" max="2" step="0.1" value="1" />
-      <b id="surge"></b>
-    </label>
-    <label class="meter" title="Frequenza delle ondate: a sinistra rarissime, a destra frequenti ([ / ])">
-      <span>onde</span><input id="surge-freq" type="range" min="0" max="1" step="0.1" value="0.5" />
-      <button id="surge-now" title="Ondata adesso (E)">✦</button>
-    </label>
-
-    <div id="sources">
-      <button id="src-track" title="Brano in audio/ (T)">♪ brano</button>
-      <button id="src-play" title="Play / pausa (spazio)">⏯</button>
-      <button id="src-file" title="Scegli un file audio dal computer">carica…</button>
-      <select id="src-live" title="Ingresso live: microfono o scheda audio (M)">
-        <option value="">ingresso live…</option>
-      </select>
-      <input id="file-input" type="file" accept="audio/*" hidden />
-    </div>
-
-    <div id="info"></div>
-    <div id="keys">1–4 palette · +/− reattività · E ondata · [ ] frequenza onde · ↑↓ scie · ←→ liquido · S polvere · T brano · M live · spazio play · F fullscreen · H nascondi</div>
+  <div id="resume" role="alert" hidden>
+    <p id="resume-msg"></p>
+    <button id="resume-audio" type="button">Riattiva l'audio</button>
   </div>
+
+  <button id="panel-toggle" type="button" aria-expanded="false" aria-controls="panel" aria-keyshortcuts="H">
+    <span class="dot" aria-hidden="true"></span>Controlli
+  </button>
+
+  <aside id="panel" aria-labelledby="panel-title" hidden>
+    <header>
+      <h2 id="panel-title">Controlli</h2>
+      <button id="panel-close" type="button" aria-label="Chiudi i controlli">×</button>
+    </header>
+    <div id="panel-body"></div>
+  </aside>
 
   <script src="https://cdn.jsdelivr.net/npm/p5@1.11.3/lib/p5.min.js"></script>
   <script src="shaders.js"></script>
   <script src="audio.js"></script>
+  <script src="ui.js"></script>
   <script src="sketch.js"></script>
 </body>
 </html>

@@ -28,6 +28,7 @@ class AudioReactive {
     this.surgeThreshold = 1.3; // quanto deve superare la media lenta (più basso = più frequente)
     this.lastBeat = 0;
     this.time = 0;
+    this.sourceTime = 0;       // secondi dall'ultimo cambio di sorgente
     this.mode = 'nessuno';
   }
 
@@ -44,7 +45,14 @@ class AudioReactive {
 
   _disconnect() {
     if (this.source) { try { this.source.disconnect(); } catch (e) {} this.source = null; }
-    if (this.audioEl) { this.audioEl.pause(); this.audioEl = null; }
+    if (this.audioEl) {
+      // Libero davvero il decoder e il file: senza questo ogni cambio di brano resta in memoria
+      this.audioEl.pause();
+      this.audioEl.removeAttribute('src');
+      this.audioEl.load();
+      this.audioEl = null;
+    }
+    if (this.objectUrl) { URL.revokeObjectURL(this.objectUrl); this.objectUrl = null; }
   }
 
   // Ingresso live: microfono o scheda audio (es. uscita del mixer del DJ).
@@ -66,8 +74,10 @@ class AudioReactive {
     }
     this.source = this.ctx.createMediaStreamSource(this.micStream);
     this.source.connect(this.analyser); // NON verso le casse: niente larsen
+    this.sourceTime = 0;
     const label = this.micStream.getAudioTracks()[0]?.label;
     this.mode = label ? `live · ${label}` : 'microfono';
+    this.kind = 'live';
   }
 
   // Elenco degli ingressi audio (i nomi compaiono solo dopo il primo permesso)
@@ -87,6 +97,7 @@ class AudioReactive {
     this.source = this.ctx.createMediaElementSource(el);
     this.source.connect(this.analyser);
     this.source.connect(this.ctx.destination);
+    this.sourceTime = 0;
     try {
       await el.play();
     } catch (e) {
@@ -94,11 +105,15 @@ class AudioReactive {
       throw e;
     }
     this.mode = `brano · ${name}`;
+    this.kind = 'track';
   }
 
   // Brano scelto o trascinato dall'utente
-  useFile(file) {
-    return this.useUrl(URL.createObjectURL(file), file.name);
+  async useFile(file) {
+    const url = URL.createObjectURL(file);
+    await this.useUrl(url, file.name);
+    this.objectUrl = url; // revocato al prossimo cambio di sorgente
+    this.kind = 'file';
   }
 
   togglePlay() {
@@ -142,6 +157,13 @@ class AudioReactive {
   }
 
   _updateSurge(raw, dt) {
+    // Riscaldamento: con una sorgente nuova la media lenta parte da zero e ogni suono
+    // sembrerebbe un'esplosione. Per qualche secondo la allineo e non lancio ondate.
+    if (this.sourceTime < 5) {
+      this.energyFast += (raw - this.energyFast) * (1 - Math.exp(-dt / 0.3));
+      this.energySlow = this.energyFast;
+      return;
+    }
     this.energyFast += (raw - this.energyFast) * (1 - Math.exp(-dt / 0.3));
     this.energySlow += (raw - this.energySlow) * (1 - Math.exp(-dt / 8));
     const ratio = this.energyFast / Math.max(this.energySlow, 0.02);
@@ -153,6 +175,7 @@ class AudioReactive {
 
   update(dt) {
     this.time += dt;
+    this.sourceTime += dt;
     this.beat *= Math.exp(-dt * 7);
 
     // Inviluppo dell'ondata: attacco quasi istantaneo, tenuta, lunga coda (~2.5 s)
